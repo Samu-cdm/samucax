@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Boletim Supremo — Simulador Avançado</title>
+  <style>
+    :root{
+      --bg:#071428; --card:#0b1220; --accent:#06b6d4; --muted:#94a3b8; --ok:#10b981; --warn:#f59e0b; --bad:#ef4444;
+      color:#e6eef6; font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    body{background:linear-gradient(180deg,#071024 0%, #071428 100%); margin:0; padding:20px; min-height:100vh;}
+    .app{max-width:1100px;margin:0 auto;background:var(--card);border-radius:12px;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,0.6)}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between}
+    h1{font-size:20px;margin:0}
+    p.lead{margin:6px 0 0;color:var(--muted);font-size:13px}
+    .tabs{display:flex;gap:8px;margin-top:16px}
+    .tab{padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.02);cursor:pointer;color:var(--muted)}
+    .tab.active{background:linear-gradient(90deg, rgba(6,182,212,0.12), rgba(16,185,129,0.06)); color:var(--accent); font-weight:600}
+    .panel{margin-top:16px}
+    .card{background:rgba(255,255,255,0.02);padding:12px;border-radius:8px;margin-top:12px}
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    th,td{padding:8px;border-bottom:1px solid rgba(255,255,255,0.03);text-align:left}
+    th{color:var(--muted);font-size:12px}
+    input[type="number"], input[type="text"]{width:100%;padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+    input[type="number"].small{width:90px}
+    .btn{background:var(--accent);border:none;padding:8px 12px;border-radius:8px;color:#001;cursor:pointer}
+    .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted);padding:6px 10px;border-radius:8px}
+    .mini{font-size:12px;padding:6px 8px}
+    .muted{color:var(--muted);font-size:13px}
+    .status{font-weight:700;padding:6px 8px;border-radius:6px}
+    .status.ok{background:rgba(16,185,129,0.12);color:var(--ok)}
+    .status.warn{background:rgba(245,158,11,0.08);color:var(--warn)}
+    .status.bad{background:rgba(239,68,68,0.08);color:var(--bad)}
+    .flex{display:flex;gap:8px;align-items:center}
+    .right{margin-left:auto}
+    .small{font-size:12px;color:var(--muted)}
+    .editable{cursor:pointer}
+    .note-min{font-weight:700}
+    .subject-select{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+    footer{margin-top:18px;color:var(--muted);font-size:12px}
+    .clickable{cursor:pointer;color:var(--accent);text-decoration:underline}
+    /* modal */
+    .modal-backdrop{position:fixed;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;z-index:999}
+    .modal{width:540px;background:#fff;color:#001;border-radius:10px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,0.6)}
+    .modal h3{margin:0 0 8px}
+    .row{display:flex;gap:12px;align-items:center}
+    .col{display:flex;flex-direction:column;gap:8px}
+    .muted-dark{color:#445668;font-size:13px}
+    .result-box{padding:10px;border-radius:8px;background:#f3f5f7}
+    @media (max-width:600px){
+      .modal{width:92%}
+      .row{flex-direction:column;align-items:stretch}
+    }
+  </style>
+
+  <!-- pdf.js para extração -->
+  <script src="https://unpkg.com/pdfjs-dist@3.8.162/build/pdf.min.js"></script>
+  <!-- html2pdf -->
+  <script src="https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1>Boletim Supremo — Simulador Avançado</h1>
+        <p class="lead">Importa o boletim (PDF) ou preenche manual — calcula o trimestre, resolve faltantes e mostra a nota mínima anual (36/60) no boletim completo.</p>
+      </div>
+      <div class="flex">
+        <div class="small muted">Aluno:</div>
+        <div id="studentName" class="small"></div>
+      </div>
+    </header>
+
+    <div class="tabs" role="tablist">
+      <div class="tab active" data-tab="full">Boletim Completo</div>
+      <div class="tab" data-tab="single">Matéria Específica</div>
+    </div>
+
+    <!-- PANEL FULL -->
+    <div class="panel" id="panel-full">
+      <div class="card">
+        <div class="row">
+          <div style="flex:1" class="col">
+            <label class="small muted">Upload do boletim PDF (processado localmente)</label>
+            <input id="pdfUpload" type="file" accept="application/pdf" />
+            <div class="small muted">Se o parser errar, ajusta manualmente clicando na matéria.</div>
+          </div>
+          <div style="width:260px" class="col">
+            <label class="small muted">Nome (editável)</label>
+            <input id="inputNome" type="text" value="" />
+            <label class="small muted">RA</label>
+            <input id="inputRA" type="text" value="" />
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+          <button id="btnSave" class="btn mini">Salvar local</button>
+          <button id="btnClear" class="btn-ghost mini">Limpar dados</button>
+          <div class="right">
+            <button id="btnGeneratePDF" class="btn mini">Gerar PDF do boletim</button>
+          </div>
+        </div>
+
+        <div id="tableWrapper" class="card" style="margin-top:12px;overflow:auto">
+          <table id="boletimTable">
+            <thead>
+              <tr>
+                <th>Disciplina</th>
+                <th>1º Tri</th>
+                <th>2º Tri</th>
+                <th>3º Tri</th>
+                <th>Nota Final (0-60)</th>
+                <th>Min p/ passar (T3)</th>
+                <th>Situação</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody">
+              <!-- preenchido por JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL SINGLE -->
+    <div class="panel" id="panel-single" style="display:none">
+      <div class="card">
+        <div class="row" style="align-items:stretch">
+          <div style="flex:1" class="col">
+            <label class="small muted">Matéria</label>
+            <select id="subjectSelect" class="subject-select"></select>
+          </div>
+
+          <div style="width:140px" class="col">
+            <label class="small muted">Trimestre</label>
+            <select id="whichTri" class="subject-select">
+              <option value="t1">T1</option>
+              <option value="t2">T2</option>
+              <option value="t3">T3</option>
+            </select>
+          </div>
+
+          <div style="width:160px" class="col">
+            <label class="small muted">Meta</label>
+            <input id="metaTri" type="number" step="0.1" min="0" max="10" value="6.0" />
+            <div class="small muted">Padrão = 6.0</div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px" class="card">
+          <div class="row">
+            <div style="flex:1">
+              <label class="small muted">AV1</label>
+              <input id="singleAV1" type="number" step="0.1" min="0" max="10" />
+            </div>
+            <div style="flex:1">
+              <label class="small muted">MULT</label>
+              <input id="singleMULT" type="number" step="0.1" min="0" max="10" />
+            </div>
+            <div style="flex:1">
+              <label class="small muted">TRAB</label>
+              <input id="singleTRAB" type="number" step="0.1" min="0" max="10" />
+            </div>
+            <div style="min-width:220px" class="col">
+              <label class="small muted">Resultado</label>
+              <div id="singleResult" class="result-box muted-dark">Média/Resultado aparecerá aqui</div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px" class="row">
+            <button id="btnCalcSingle" class="btn mini">Calcular</button>
+            <button id="btnApplySingle" class="btn-ghost mini">Aplicar ao boletim</button>
+            <button id="btnResetSingle" class="btn-ghost mini">Resetar campos</button>
+          </div>
+
+          <div style="margin-top:10px" class="small muted">
+            Modo tri: calcula a nota do trimestre e, se faltar componente, resolve faltante para alcançar a meta.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <div class="muted">Lista fixa de disciplinas. Dados salvos apenas no seu navegador (localStorage). Se o parser errar com seu PDF, clique na disciplina e corrija no modal.</div>
+    </footer>
+  </div>
+
+  <!-- Modal central -->
+  <div id="modalBackdrop" class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3 id="modalTitle">Editar: Matemática</h3>
+      <div class="row">
+        <div style="flex:1" class="col">
+          <label class="small muted">Trimestre</label>
+          <select id="modalWhichTri" class="subject-select">
+            <option value="t1">T1</option><option value="t2">T2</option><option value="t3">T3</option>
+          </select>
+          <label class="small muted">Meta do trimestre</label>
+          <input id="modalMeta" type="number" step="0.1" min="0" max="10" value="6.0" />
+        </div>
+        <div style="flex:1" class="col">
+          <label class="small muted">AV1 (peso 3)</label>
+          <input id="modalAV1" type="number" step="0.1" min="0" max="10" />
+          <label class="small muted">MULT (peso 4)</label>
+          <input id="modalMULT" type="number" step="0.1" min="0" max="10" />
+          <label class="small muted">TRAB (peso 3)</label>
+          <input id="modalTRAB" type="number" step="0.1" min="0" max="10" />
+        </div>
+      </div>
+
+      <div style="margin-top:12px" class="row">
+        <div id="modalResult" class="col result-box muted-dark">Resultado aparecerá aqui</div>
+        <div class="right">
+          <button id="modalApply" class="btn mini">Aplicar</button>
+          <button id="modalClose" class="btn-ghost mini">Fechar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ---------- Config ---------- */
+const SUBJECTS = [
+  "Arte","Biologia","Filosofia","Física","Geografia","História","Itinerário Aprofundamento 1",
+  "Língua Inglesa","Língua Portuguesa","Matemática","Projeto de Vida","Química","Redação","Sociologia"
+];
+const STORAGE_KEY = 'boletim_supremo_v_final';
+const META_PADRAO = 6.0; // meta tri default
+const CORTE_ANUAL = 36; // pontos para passar no ano (0-60)
+
+/* ---------- Estado ---------- */
+let state = { nome: "", ra: "", subjects: {} };
+for (const s of SUBJECTS) state.subjects[s] = { t1:null, t2:null, t3:null, components: {
+  t1:{av1:null,mult:null,trab:null}, t2:{av1:null,mult:null,trab:null}, t3:{av1:null,mult:null,trab:null}
+} };
+
+/* ---------- Util ---------- */
+function parseNumber(x){
+  if (x===null || x===undefined || x==='') return null;
+  const str = String(x).trim().replace(',', '.');
+  const n = Number(str);
+  return isNaN(n) ? null : n;
+}
+function clampNote(n){ if (n===null) return null; return Math.max(0, Math.min(10, Number(Number(n).toFixed(2)))); }
+
+/* ---------- Cálculos de trimestre ---------- */
+function calcTrimesterNormalFromComponents(comps){
+  const a = parseNumber(comps.av1);
+  const m = parseNumber(comps.mult);
+  const t = parseNumber(comps.trab);
+  if (a===null && m===null && t===null) return null;
+  const A = a ?? 0, M = m ?? 0, T = t ?? 0;
+  const res = (A*3 + M*4 + T*3) / 10;
+  return Number(res.toFixed(2));
+}
+function calcTrimesterArtsFromComponents(comps){
+  const m = parseNumber(comps.mult);
+  const t = parseNumber(comps.trab);
+  if (m===null && t===null) return null;
+  const M = m ?? 0, T = t ?? 0;
+  return Number(((M*5 + T*5)/10).toFixed(2));
+}
+function isArtOrEnglish(subject){
+  const s = subject.toLowerCase();
+  return s.includes("arte") || s.includes("ingl");
+}
+
+/* ---------- Resolver faltantes ---------- */
+function solveMissingNormal(known, target, missingFields){
+  const T = Number(target);
+  const av1 = parseNumber(known.av1) ?? null;
+  const mult = parseNumber(known.mult) ?? null;
+  const trab = parseNumber(known.trab) ?? null;
+
+  if (missingFields.length===1){
+    const field = missingFields[0];
+    if (field==='mult'){
+      const val = (10*T - 3*(av1 ?? 0) - 3*(trab ?? 0)) / 4;
+      return {[field]: Number(val.toFixed(2))};
+    }
+    if (field==='av1'){
+      const val = (10*T - 4*(mult ?? 0) - 3*(trab ?? 0)) / 3;
+      return {[field]: Number(val.toFixed(2))};
+    }
+    if (field==='trab'){
+      const val = (10*T - 3*(av1 ?? 0) - 4*(mult ?? 0)) / 3;
+      return {[field]: Number(val.toFixed(2))};
+    }
+  } else if (missingFields.length===2){
+    let coeff = 0;
+    for (const f of missingFields){
+      if (f==='av1') coeff += 3;
+      if (f==='mult') coeff += 4;
+      if (f==='trab') coeff += 3;
+    }
+    const rhs = 10*T - (3*(av1 ?? 0) + 4*(mult ?? 0) + 3*(trab ?? 0));
+    const x = rhs / coeff;
+    const res = {};
+    for (const f of missingFields) res[f] = Number(x.toFixed(2));
+    return res;
+  }
+  return {};
+}
+function solveMissingArts(known, target, missingFields){
+  const T = Number(target);
+  const mult = parseNumber(known.mult) ?? null;
+  const trab = parseNumber(known.trab) ?? null;
+  if (missingFields.length===1){
+    const field = missingFields[0];
+    if (field==='mult'){
+      const val = 2*T - (trab ?? 0);
+      return {mult: Number(val.toFixed(2))};
+    }
+    if (field==='trab'){
+      const val = 2*T - (mult ?? 0);
+      return {trab: Number(val.toFixed(2))};
+    }
+  } else if (missingFields.length===2){
+    return {mult: Number(T.toFixed(2)), trab: Number(T.toFixed(2))};
+  }
+  return {};
+}
+
+/* ---------- Cálculo final anual ---------- */
+function calcFinalScore(subjectData){
+  const t1 = parseNumber(subjectData.t1) ?? 0;
+  const t2 = parseNumber(subjectData.t2) ?? 0;
+  const t3 = parseNumber(subjectData.t3) ?? 0;
+  const finalPoints = (t1*1) + (t2*2) + (t3*3); // 0..60
+  return Number(finalPoints.toFixed(2));
+}
+function minNeededT3ForAnnual(t1,t2){
+  const sum = (parseNumber(t1) ?? 0)*1 + (parseNumber(t2) ?? 0)*2;
+  const need = (CORTE_ANUAL - sum) / 3;
+  return Number(need.toFixed(2));
+}
+
+/* ---------- DOM & Render ---------- */
+const tabs = document.querySelectorAll('.tab');
+tabs.forEach(t => t.addEventListener('click', ()=>{
+  tabs.forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  const tab = t.getAttribute('data-tab');
+  document.getElementById('panel-full').style.display = tab==='full' ? '' : 'none';
+  document.getElementById('panel-single').style.display = tab==='single' ? '' : 'none';
+}));
+
+function renderTable(){
+  document.getElementById('studentName').textContent = state.nome || '-';
+  document.getElementById('inputNome').value = state.nome || '';
+  document.getElementById('inputRA').value = state.ra || '';
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  for (const subj of SUBJECTS){
+    const data = state.subjects[subj];
+    const tr = document.createElement('tr');
+
+    // disciplina (clicável)
+    const tdName = document.createElement('td');
+    tdName.innerHTML = `<strong class="clickable">${subj}</strong>`;
+    tdName.querySelector('strong').addEventListener('click', ()=> openModalForSubject(subj));
+    tr.appendChild(tdName);
+
+    // T1,T2,T3
+    ['t1','t2','t3'].forEach(k=>{
+      const td = document.createElement('td');
+      td.textContent = (data[k] === null || data[k] === undefined) ? '-' : data[k];
+      tr.appendChild(td);
+    });
+
+    // nota final (0-60)
+    const tdFinal = document.createElement('td');
+    const finalPts = calcFinalScore(data);
+    tdFinal.textContent = isNaN(finalPts) ? '-' : finalPts.toFixed(2);
+    tr.appendChild(tdFinal);
+
+   // min p/ passar no T3 + situação inteligente
+const tdMin = document.createElement('td');
+const tdSit = document.createElement('td');
+const span = document.createElement('div');
+span.classList.add('status');
+
+if (finalPts >= CORTE_ANUAL) {
+  // Já aprovado
+  tdMin.textContent = '-';
+  span.textContent = 'Aprovado ✔';
+  span.classList.add('ok');
+
+} else if (data.t3 === null) {
+  // Ainda falta o T3 → calcular quanto precisa
+  const need = minNeededT3ForAnnual(data.t1, data.t2);
+  tdMin.textContent = (need > 10) ? 'Impossível' : need.toFixed(2);
+  span.textContent = (need > 10) ? 'Reprovado' : `Precisa ${need.toFixed(2)}`;
+  span.classList.add(need > 10 ? 'bad' : 'warn');
+
+} else {
+  // Já tem T3 mas não passou
+  tdMin.textContent = '-';
+  span.textContent = `Reprovado (${finalPts})`;
+  span.classList.add('bad');
+}
+
+tdSit.appendChild(span);
+tr.appendChild(tdMin);
+tr.appendChild(tdSit);
+
+tbody.appendChild(tr);  // <-- fecha a linha e adiciona na tabela
+  } // <-- fecha o for (for (const subj of SUBJECTS))
+} // <-- fecha a função renderTable()
+
+
+/* ---------- Single panel (só tri) ---------- */
+const subjectSelect = document.getElementById('subjectSelect');
+for (const s of SUBJECTS){
+  const o = document.createElement('option'); o.value = s; o.textContent = s; subjectSelect.appendChild(o);
+}
+subjectSelect.addEventListener('change', ()=> loadSinglePanel(subjectSelect.value));
+document.getElementById('whichTri').addEventListener('change', ()=> updateSingleResult());
+
+function loadSinglePanel(subj){
+  const data = state.subjects[subj];
+  const tri = document.getElementById('whichTri').value;
+  const comps = data.components[tri];
+  document.getElementById('singleAV1').value = comps.av1 ?? '';
+  document.getElementById('singleMULT').value = comps.mult ?? '';
+  document.getElementById('singleTRAB').value = comps.trab ?? '';
+  document.getElementById('metaTri').value = META_PADRAO;
+  updateSingleResult();
+}
+function updateSingleResult(){
+  const subj = subjectSelect.value;
+  const tri = document.getElementById('whichTri').value;
+  const meta = parseNumber(document.getElementById('metaTri').value) ?? META_PADRAO;
+  const a = parseNumber(document.getElementById('singleAV1').value);
+  const m = parseNumber(document.getElementById('singleMULT').value);
+  const t = parseNumber(document.getElementById('singleTRAB').value);
+
+  const comps = {av1: a, mult: m, trab: t};
+  const isArt = isArtOrEnglish(subj);
+  let resultText = '';
+  const filled = [a,m,t].filter(x=>x!==null).length;
+  if (filled === 0){
+    resultText = `Meta do trimestre: ${meta.toFixed(1)} (padrão). Preencha pelo menos 1 valor ou clique em Calcular.`;
+  } else if (filled === 3){
+    const triVal = isArt ? calcTrimesterArtsFromComponents(comps) : calcTrimesterNormalFromComponents(comps);
+    const pass = triVal >= META_PADRAO;
+    resultText = `Nota do tri: ${triVal.toFixed(2)} — ${pass? 'Passou' : 'Não passou'} (corte ${META_PADRAO}).`;
+  } else {
+    const missing = [];
+    if (a===null) missing.push('av1');
+    if (m===null) missing.push('mult');
+    if (t===null) missing.push('trab');
+    let solved = {};
+    if (isArt){
+      solved = solveMissingArts(comps, meta, missing);
+    } else {
+      solved = solveMissingNormal(comps, meta, missing);
+    }
+    const msgs = [];
+    for (const k of Object.keys(solved)){
+      const val = clampNote(solved[k]);
+      if (val > 10) msgs.push(`${k.toUpperCase()} necessário: ${solved[k].toFixed(2)} → Impossível (>10)`);
+      else if (val <= 0) msgs.push(`${k.toUpperCase()} necessário: ${solved[k].toFixed(2)} → Já atinge sem essa nota`);
+      else msgs.push(`${k.toUpperCase()} necessário: ${val.toFixed(2)}`);
+    }
+    resultText = msgs.join(' • ');
+  }
+  document.getElementById('singleResult').textContent = resultText;
+}
+
+/* ---------- Single panel events ---------- */
+document.getElementById('btnCalcSingle').addEventListener('click', updateSingleResult);
+document.getElementById('btnResetSingle').addEventListener('click', ()=>{
+  document.getElementById('singleAV1').value = '';
+  document.getElementById('singleMULT').value = '';
+  document.getElementById('singleTRAB').value = '';
+  document.getElementById('metaTri').value = META_PADRAO;
+  updateSingleResult();
+});
+document.getElementById('btnApplySingle').addEventListener('click', ()=>{
+  const subj = subjectSelect.value;
+  const tri = document.getElementById('whichTri').value;
+  state.subjects[subj].components[tri].av1 = document.getElementById('singleAV1').value || null;
+  state.subjects[subj].components[tri].mult = document.getElementById('singleMULT').value || null;
+  state.subjects[subj].components[tri].trab = document.getElementById('singleTRAB').value || null;
+  const comps = state.subjects[subj].components[tri];
+  const triVal = isArtOrEnglish(subj) ? calcTrimesterArtsFromComponents(comps) : calcTrimesterNormalFromComponents(comps);
+  state.subjects[subj][tri] = triVal === null ? null : triVal;
+  saveState();
+  renderTable();
+  alert('Alteração aplicada ao boletim.');
+});
+
+/* ---------- Modal logic (editar matéria direto na tabela) ---------- */
+const backdrop = document.getElementById('modalBackdrop');
+function openModalForSubject(subj){
+  const data = state.subjects[subj];
+  document.getElementById('modalTitle').textContent = `Editar — ${subj}`;
+  document.getElementById('modalWhichTri').value = 't1';
+  document.getElementById('modalMeta').value = META_PADRAO;
+  const comps = data.components.t1;
+  document.getElementById('modalAV1').value = comps.av1 ?? '';
+  document.getElementById('modalMULT').value = comps.mult ?? '';
+  document.getElementById('modalTRAB').value = comps.trab ?? '';
+  document.getElementById('modalResult').textContent = 'Preencha as notas (ou deixe em branco para calcular o faltante).';
+  backdrop.style.display = 'flex';
+
+  function applyHandler(){
+    const tri = document.getElementById('modalWhichTri').value;
+    const av1 = document.getElementById('modalAV1').value || null;
+    const mult = document.getElementById('modalMULT').value || null;
+    const trab = document.getElementById('modalTRAB').value || null;
+    state.subjects[subj].components[tri].av1 = av1;
+    state.subjects[subj].components[tri].mult = mult;
+    state.subjects[subj].components[tri].trab = trab;
+    const compsObj = state.subjects[subj].components[tri];
+    const triVal = isArtOrEnglish(subj) ? calcTrimesterArtsFromComponents(compsObj) : calcTrimesterNormalFromComponents(compsObj);
+    state.subjects[subj][tri] = triVal === null ? null : triVal;
+    saveState();
+    renderTable();
+    alert('Dados aplicados.');
+    closeModal();
+  }
+  document.getElementById('modalApply').onclick = applyHandler;
+
+  ['modalAV1','modalMULT','modalTRAB','modalWhichTri','modalMeta'].forEach(id=>{
+    document.getElementById(id).oninput = ()=> {
+      const tri = document.getElementById('modalWhichTri').value;
+      const meta = parseNumber(document.getElementById('modalMeta').value) ?? META_PADRAO;
+      const av1 = parseNumber(document.getElementById('modalAV1').value);
+      const mult = parseNumber(document.getElementById('modalMULT').value);
+      const trab = parseNumber(document.getElementById('modalTRAB').value);
+      const missing = [];
+      if (av1===null) missing.push('av1');
+      if (mult===null) missing.push('mult');
+      if (trab===null) missing.push('trab');
+      const isArt = isArtOrEnglish(subj);
+      let resText = '';
+      if (missing.length===0){
+        const triVal = isArt ? calcTrimesterArtsFromComponents({mult,trab}) : calcTrimesterNormalFromComponents({av1,mult,trab});
+        resText = `Nota do ${tri.toUpperCase()}: ${triVal.toFixed(2)} — ${triVal >= META_PADRAO ? 'Passou' : 'Não passou'}`;
+      } else if (missing.length<=2){
+        const solved = isArt ? solveMissingArts({mult,trab}, meta, missing) : solveMissingNormal({av1,mult,trab}, meta, missing);
+        const msgs = [];
+        for (const f of Object.keys(solved)){
+          const v = solved[f];
+          if (v > 10) msgs.push(`${f.toUpperCase()} necessário: ${v.toFixed(2)} → Impossível (>10)`);
+          else if (v <= 0) msgs.push(`${f.toUpperCase()} necessário: ${v.toFixed(2)} → Já atinge sem essa nota`);
+          else msgs.push(`${f.toUpperCase()} necessário: ${v.toFixed(2)}`);
+        }
+        resText = msgs.join(' • ');
+      } else {
+        resText = 'Preencha pelo menos 1 valor.';
+      }
+      document.getElementById('modalResult').textContent = resText;
+    };
+  });
+}
+function closeModal(){
+  backdrop.style.display = 'none';
+  document.getElementById('modalApply').onclick = null;
+}
+document.getElementById('modalClose').addEventListener('click', closeModal);
+
+/* ---------- Save / Load ---------- */
+function saveState(){
+  const payload = {
+    nome: document.getElementById('inputNome').value || state.nome,
+    ra: document.getElementById('inputRA').value || state.ra,
+    subjects: state.subjects
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  state.nome = payload.nome; state.ra = payload.ra;
+}
+function loadSaved(){
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) { renderTable(); subjectSelect.value = SUBJECTS[0]; loadSinglePanel(SUBJECTS[0]); return; }
+    const parsed = JSON.parse(raw);
+    if (parsed.nome) state.nome = parsed.nome;
+    if (parsed.ra) state.ra = parsed.ra;
+    if (parsed.subjects){
+      for (const s of SUBJECTS){
+        if (parsed.subjects[s]) state.subjects[s] = parsed.subjects[s];
+      }
+    }
+  } catch (err){ console.warn('Erro ao carregar localStorage', err); }
+  renderTable();
+  subjectSelect.value = SUBJECTS[0];
+  loadSinglePanel(SUBJECTS[0]);
+}
+document.getElementById('btnSave').addEventListener('click', ()=>{ saveState(); alert('Dados salvos localmente.'); });
+document.getElementById('btnClear').addEventListener('click', ()=>{ if (!confirm('Limpar todos os dados salvos localmente?')) return; localStorage.removeItem(STORAGE_KEY); location.reload(); });
+
+/* ---------- Gerar PDF ---------- */
+document.getElementById('btnGeneratePDF').addEventListener('click', ()=>{
+  const nome = document.getElementById('inputNome').value || state.nome;
+  const ra = document.getElementById('inputRA').value || state.ra;
+  const wrap = document.createElement('div');
+  wrap.style.padding = '18px'; wrap.style.color = '#000'; wrap.style.background = '#fff';
+  wrap.innerHTML = `<h2 style="margin:0">${nome}</h2><div style="margin-bottom:8px">RA: ${ra}</div><table style="width:100%;border-collapse:collapse;font-size:12px">` +
+    `<thead><tr><th style="text-align:left;border-bottom:1px solid #ccc;padding:6px">Disciplina</th><th style="padding:6px;border-bottom:1px solid #ccc">T1</th><th style="padding:6px;border-bottom:1px solid #ccc">T2</th><th style="padding:6px;border-bottom:1px solid #ccc">T3</th><th style="padding:6px;border-bottom:1px solid #ccc">Final</th><th style="padding:6px;border-bottom:1px solid #ccc">Min T3</th><th style="padding:6px;border-bottom:1px solid #ccc">Situação</th></tr></thead><tbody>`;
+  for (const subj of SUBJECTS){
+    const d = state.subjects[subj];
+    const final = calcFinalScore(d);
+    const minT3 = minNeededT3ForAnnual(d.t1, d.t2);
+    const minDisp = (minT3 > 10) ? 'Impossível' : (minT3 <= 0 ? '0.0' : minT3.toFixed(2));
+    const sit = final >= CORTE_ANUAL ? 'Aprovado' : 'Reprovado';
+    wrap.innerHTML += `<tr><td style="padding:6px;border-bottom:1px solid #eee">${subj}</td><td style="padding:6px;border-bottom:1px solid #eee">${d.t1 ?? '-'}</td><td style="padding:6px;border-bottom:1px solid #eee">${d.t2 ?? '-'}</td><td style="padding:6px;border-bottom:1px solid #eee">${d.t3 ?? '-'}</td><td style="padding:6px;border-bottom:1px solid #eee">${isNaN(final)? '-': final.toFixed(2)}</td><td style="padding:6px;border-bottom:1px solid #eee">${minDisp}</td><td style="padding:6px;border-bottom:1px solid #eee">${sit}</td></tr>`;
+  }
+  wrap.innerHTML += `</tbody></table><div style="text-align:center;margin-top:12px;color:#666">Feito por Samuel Batista Machado</div>`;
+  const opt = { margin:10, filename: `${(nome||'boletim').replace(/\s+/g,'_')}_boletim.pdf`, image:{type:'jpeg',quality:0.98}, html2canvas:{scale:2}, jsPDF:{unit:'mm',format:'a4',orientation:'portrait'} };
+  html2pdf().set(opt).from(wrap).save();
+});
+
+
+/* ---------- PDF upload & parsing ---------- */
+const pdfInput = document.getElementById('pdfUpload');
+pdfInput.addEventListener('change', async (ev)=>{
+  const file = ev.target.files[0];
+  if (!file) return alert('Selecione um PDF');
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdf = await loadingTask.promise;
+
+    let fullText = '';
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const strings = content.items.map(it => it.str);
+      fullText += strings.join(' ') + '\n';
+    }
+
+    console.log("======= TEXTO EXTRAÍDO =======");
+    console.log(fullText);
+    console.log("======= FIM =======");
+
+    parseBoletimText(fullText);
+
+  } catch (err) {
+    console.error(err);
+    alert('Erro ao processar PDF: ' + (err?.message || err));
+  }
+});
+
+/* ---------- Heurística de parsing (focada no seu boletim: linhas com MATÉRIA T1 T2 T3) ---------- */
+function parseBoletimText(txt) {
+  txt = txt.replace(/\u00A0/g, ' ')
+           .replace(/([A-Za-zÀ-ú])(\d)/g, '$1 $2')
+           .replace(/,(\d)/g, '.$1')
+           .replace(/\s+/g, ' ')
+           .trim();
+
+  const results = {};
+
+  SUBJECTS.forEach((subj, i) => {
+    const curIndex = txt.indexOf(subj);
+    if (curIndex === -1) return;
+
+    let nextIndex = txt.length;
+    for (let j = i + 1; j < SUBJECTS.length; j++) {
+      const pos = txt.indexOf(SUBJECTS[j], curIndex + subj.length);
+      if (pos !== -1 && pos < nextIndex) {
+        nextIndex = pos;
+      }
+    }
+
+    let snippet = txt.slice(curIndex, nextIndex).trim();
+
+// Remover o "1" do nome "Itinerário Aprofundamento 1"
+if (subj === "Itinerário Aprofundamento 1") {
+  snippet = snippet.replace(subj, "Itinerário Aprofundamento");
+}
+
+
+    const nums = snippet.match(/\d+(?:\.\d+)?|-/g)
+        ?.filter(n => parseFloat(n) <= 10 || n === "-")
+        .slice(0, 3);
+
+    results[subj] = {
+      t1: nums?.[0] === '-' ? null : parseFloat(nums[0] || null),
+      t2: nums?.[1] === '-' ? null : parseFloat(nums[1] || null),
+      t3: nums?.[2] === '-' ? null : parseFloat(nums[2] || null),
+    };
+  });
+
+  console.log("🎯 RESULTADO FINAL:");
+  console.log(results);
+
+  Object.keys(results).forEach(subj => {
+    state.subjects[subj].t1 = results[subj].t1;
+    state.subjects[subj].t2 = results[subj].t2;
+    state.subjects[subj].t3 = results[subj].t3;
+  });
+
+  saveState();
+  renderTable();
+  alert("Importação finalizada! Confira na tabela.");
+}
+
+
+/* ---------- small helpers ---------- */
+function removeAccents(str){ return str.normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+
+/* ---------- init ---------- */
+document.getElementById('inputNome').addEventListener('input', (e)=> { state.nome = e.target.value; saveState(); renderTable(); });
+document.getElementById('inputRA').addEventListener('input', (e)=> { state.ra = e.target.value; saveState(); renderTable(); });
+document.getElementById('whichTri').addEventListener('change', ()=> loadSinglePanel(subjectSelect.value));
+document.getElementById('modalWhichTri').addEventListener('change', ()=> { /* placeholder */ });
+
+loadSaved();
+</script>
+
+<!-- assinatura fixa -->
+<footer style="text-align:center;margin-top:14px;color:var(--muted)">Feito por Samuel Batista Machado</footer>
+</body>
+</html>
